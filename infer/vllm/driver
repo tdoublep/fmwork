@@ -133,6 +133,10 @@ def llm():
         max_num_seqs                 = min(par.max_num_seqs, max(var.input_sizes) + max(var.output_sizes)),
         enable_chunked_prefill       = par.enable_chunked_prefill,
         device                       = par.device,
+        max_seq_len_to_capture       = max(var.input_sizes) + max(var.output_sizes),
+        enable_prefix_caching        = False,
+        max_num_batched_tokens       = 16384,
+        compilation_config           = {"full_cuda_graph": True}
     )
 
     t1 = fmwork.time_get()
