@@ -116,6 +116,14 @@ def llm():
 
     t0 = fmwork.time_get()
 
+
+    compilation_config = {
+        "cudagraph_mode": "FULL_AND_PIECEWISE",
+        #"custom_ops": ["none", "+quant_fp8", "+mixer2_gated_rms_norm"],
+    }
+
+    print(compilation_config)
+
     var.llm = vllm.LLM(
         dtype                        = par.dtype,
         enforce_eager                = par.enforce_eager,
@@ -127,16 +135,16 @@ def llm():
         quantization                 = par.quantization,
         tensor_parallel_size         = par.tensor_parallel,
         trust_remote_code            = True,
-        num_scheduler_steps          = par.num_scheduler_steps,
+        #num_scheduler_steps          = par.num_scheduler_steps,
         #use_v2_block_manager         = par.use_v2_block_manager, # deprecated
         distributed_executor_backend = par.distributed_executor_backend,
         max_num_seqs                 = min(par.max_num_seqs, max(var.input_sizes) + max(var.output_sizes)),
         enable_chunked_prefill       = par.enable_chunked_prefill,
         #device                       = par.device,
-        max_seq_len_to_capture       = max(var.input_sizes) + max(var.output_sizes),
+        #max_seq_len_to_capture       = max(var.input_sizes) + max(var.output_sizes),
         enable_prefix_caching        = False,
         max_num_batched_tokens       = 16384,
-        compilation_config           = {"full_cuda_graph": True}
+        #compilation_config           = compilation_config,
     )
 
     t1 = fmwork.time_get()
@@ -229,8 +237,13 @@ def run(input_size, output_size, batch_size):
         ignore_eos = par.ignore_eos
     )
 
+    from vllm.inputs import TokensPrompt
+
+    prompts = []
+    for x in input_batch:
+        prompts.append(TokensPrompt(prompt_token_ids=x))
+
     kwargs = {
-        'prompt_token_ids' : input_batch,
         'sampling_params'  : sampling_params,
         'use_tqdm'         : False,
     }
@@ -239,13 +252,17 @@ def run(input_size, output_size, batch_size):
 
     for rep in range(par.reps):
         if not par.dataset_path:
-            kwargs['prompt_token_ids'] = fmwork.input_generator(
+            prompt_token_ids = fmwork.input_generator(
                 par.model_path,
                 input_size, batch_size,
                 return_tensors='np'
             )
+            prompts = []
+            for x in prompt_token_ids:
+                prompts.append(TokensPrompt(prompt_token_ids=x))
+
         fmwork.t0()
-        outputs = var.llm.generate(**kwargs)
+        outputs = var.llm.generate(prompts, **kwargs)
         try:
             torch.cuda.synchronize()
         except:
